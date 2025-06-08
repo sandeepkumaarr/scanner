@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
-import { BinanceClient } from "@/lib/binanceClient";
-import { BlueprintDetector, CandleData } from "@/lib/blueprintDetector";
+import { BinanceClient, CandleData } from "@/lib/binanceClient";
+import { detectBlueprints, MarketData } from "@/lib/blueprintDetector";
 
 // Type for Binance symbol info
 interface SymbolInfo {
@@ -57,6 +57,9 @@ export async function GET(request: NextRequest) {
                   low: parseFloat(kline[3].toString()),
                   close: parseFloat(kline[4].toString()),
                   volume: parseFloat(kline[5].toString()),
+                  range:
+                    parseFloat(kline[2].toString()) -
+                    parseFloat(kline[3].toString()), // high - low
                 })
               );
               candlesBySymbol[symbol] = formattedCandles.sort(
@@ -65,9 +68,38 @@ export async function GET(request: NextRequest) {
             }
           });
 
+          // Convert candle data to market data format for blueprint detection
+          const marketData: MarketData[] = Object.entries(candlesBySymbol)
+            .map(([symbol, candles]) => {
+              if (candles.length === 0) return null;
+
+              const latestCandle = candles[candles.length - 1];
+              const previousCandle =
+                candles.length > 1 ? candles[candles.length - 2] : latestCandle;
+
+              // Calculate 24h change percentage
+              const change24h = previousCandle
+                ? ((latestCandle.close - previousCandle.close) /
+                    previousCandle.close) *
+                  100
+                : 0;
+
+              return {
+                symbol,
+                price: latestCandle.close,
+                change24h,
+                volume: latestCandle.volume,
+                high24h: latestCandle.high,
+                low24h: latestCandle.low,
+                open: latestCandle.open,
+                close: latestCandle.close,
+                historicalRanges: undefined, // Will be populated when we add historical data fetching
+              };
+            })
+            .filter(Boolean) as MarketData[];
+
           // Detect blueprints
-          const blueprints =
-            BlueprintDetector.detectBlueprints(candlesBySymbol);
+          const blueprints = await detectBlueprints(marketData);
 
           const data = {
             success: true,

@@ -134,7 +134,25 @@ export class BinanceClient {
     }
   }
 
-  // Get market data for symbols
+  // Get historical daily ranges for ADR calculation
+  async getHistoricalRanges(
+    symbol: string,
+    days: number = 20
+  ): Promise<number[]> {
+    try {
+      const klines = await this.getKlines(symbol, "1d", days);
+      return klines.map((kline: BinanceKlineArray) => {
+        const high = parseFloat(kline[2]);
+        const low = parseFloat(kline[3]);
+        return high - low; // Daily range
+      });
+    } catch (error) {
+      console.error(`Error fetching historical ranges for ${symbol}:`, error);
+      return [];
+    }
+  }
+
+  // Get market data for symbols with historical ranges for ADR
   async getMarketData(symbols: string[]): Promise<
     Array<{
       symbol: string;
@@ -145,22 +163,31 @@ export class BinanceClient {
       low24h: number;
       open: number;
       close: number;
+      historicalRanges?: number[];
     }>
   > {
     try {
       const tickers = await this.get24hrTicker();
-      return tickers
-        .filter((ticker: { symbol: string }) => symbols.includes(ticker.symbol))
-        .map(
-          (ticker: {
-            symbol: string;
-            lastPrice: string;
-            priceChangePercent: string;
-            volume: string;
-            highPrice: string;
-            lowPrice: string;
-            openPrice: string;
-          }) => ({
+      const filteredTickers = tickers.filter((ticker: { symbol: string }) =>
+        symbols.includes(ticker.symbol)
+      );
+
+      // Fetch historical ranges for each symbol in parallel
+      const marketDataPromises = filteredTickers.map(
+        async (ticker: {
+          symbol: string;
+          lastPrice: string;
+          priceChangePercent: string;
+          volume: string;
+          highPrice: string;
+          lowPrice: string;
+          openPrice: string;
+        }) => {
+          const historicalRanges = await this.getHistoricalRanges(
+            ticker.symbol
+          );
+
+          return {
             symbol: ticker.symbol,
             price: parseFloat(ticker.lastPrice),
             change24h: parseFloat(ticker.priceChangePercent),
@@ -169,8 +196,12 @@ export class BinanceClient {
             low24h: parseFloat(ticker.lowPrice),
             open: parseFloat(ticker.openPrice),
             close: parseFloat(ticker.lastPrice),
-          })
-        );
+            historicalRanges,
+          };
+        }
+      );
+
+      return Promise.all(marketDataPromises);
     } catch (error) {
       console.error("Error fetching market data:", error);
       return [];

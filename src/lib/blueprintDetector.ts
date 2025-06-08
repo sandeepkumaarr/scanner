@@ -17,6 +17,8 @@ export interface MarketData {
   low24h: number;
   open: number;
   close: number;
+  // Add historical data for ADR calculation
+  historicalRanges?: number[]; // Array of daily ranges from last 20 days
 }
 
 export async function detectBlueprints(
@@ -42,21 +44,30 @@ function analyzeSymbol(data: MarketData): BlueprintResult[] {
   const lowerWick = Math.min(data.open, data.close) - data.low24h;
   const changePercent = Math.abs(data.change24h);
 
-  // Rejection Day Detection
-  if (detectRejectionDay(data, range, upperWick, lowerWick)) {
+  // Calculate ADR (Average Daily Range)
+  const adr = calculateADR(data.historicalRanges, range);
+
+  // Rejection Day Detection with proper blueprint measurements
+  if (detectRejectionDay(data, range, upperWick, lowerWick, bodySize, adr)) {
     const confidence = getConfidenceLevel(changePercent, data.volume);
+    const mid = (data.high24h + data.low24h) / 2;
+    const isBullish = data.change24h > 0;
+    const relevantTail = isBullish ? lowerWick : upperWick;
+    const tailToBodyRatio = bodySize > 0 ? relevantTail / bodySize : 0;
+
     results.push({
       symbol: data.symbol,
-      blueprintType:
-        data.change24h > 0 ? "Long Rejection Day" : "Short Rejection Day",
+      blueprintType: isBullish ? "Long Rejection Day" : "Short Rejection Day",
       confidence,
       price: data.price,
       change24h: data.change24h,
       volume: data.volume,
-      details: `${data.change24h > 0 ? "Bullish" : "Bearish"} rejection with ${(
-        ((upperWick + lowerWick) / range) *
+      details: `${isBullish ? "Bullish" : "Bearish"} rejection - Range: ${(
+        (range / adr) *
         100
-      ).toFixed(1)}% wick ratio`,
+      ).toFixed(0)}% ADR, Tail/Body: ${tailToBodyRatio.toFixed(
+        1
+      )}x, MID: ${mid.toFixed(2)}`,
     });
   }
 
@@ -149,15 +160,52 @@ function analyzeSymbol(data: MarketData): BlueprintResult[] {
   return results;
 }
 
+// Calculate Average Daily Range from historical data
+function calculateADR(
+  historicalRanges?: number[],
+  currentRange?: number
+): number {
+  if (!historicalRanges || historicalRanges.length === 0) {
+    // Fallback: estimate ADR as 80% of current range if no historical data
+    return currentRange ? currentRange * 0.8 : 1;
+  }
+
+  // Calculate average of last 20 days (or available data)
+  const sum = historicalRanges.reduce((acc, range) => acc + range, 0);
+  return sum / historicalRanges.length;
+}
+
 function detectRejectionDay(
   data: MarketData,
   range: number,
   upperWick: number,
-  lowerWick: number
+  lowerWick: number,
+  bodySize: number,
+  adr: number
 ): boolean {
-  const totalWick = upperWick + lowerWick;
-  const wickRatio = totalWick / range;
-  return wickRatio > 0.6 && Math.abs(data.change24h) > 2;
+  // 1. Check if range > 125% ADR
+  const rangeVsADR = range / adr;
+  if (rangeVsADR <= 1.25) return false;
+
+  // 2. Determine if bullish or bearish rejection
+  const isBullish = data.close > data.open;
+
+  // 3. Check tail > 2.5x body size
+  const relevantTail = isBullish ? lowerWick : upperWick;
+  const tailToBodyRatio = bodySize > 0 ? relevantTail / bodySize : 0;
+  if (tailToBodyRatio <= 2.5) return false;
+
+  // 4. Check close position in range
+  const closePositionInRange = (data.close - data.low24h) / range;
+
+  // Bullish: close in upper 35% (above 65% of range)
+  if (isBullish && closePositionInRange < 0.65) return false;
+
+  // Bearish: close in lower 35% (below 35% of range)
+  if (!isBullish && closePositionInRange > 0.35) return false;
+
+  // 5. Minimum change threshold
+  return Math.abs(data.change24h) > 2;
 }
 
 function detectFailedNewHigh(data: MarketData, changePercent: number): boolean {
