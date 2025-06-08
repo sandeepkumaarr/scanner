@@ -1,0 +1,918 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © sandeepkumarr90
+//@version=6
+indicator(title = 'Trading Sequences-Claude', shorttitle = 'TSE Claude', overlay = true)
+
+//Failed New Low/High Parameters
+Failed_Pattern_ADR_Min = input.float(0.75, title = 'Failed Pattern ADR Min %', minval = 0.5, maxval = 1.0, step = 0.05)
+Failed_Pattern_ADR_Max = input.float(1.0, title = 'Failed Pattern ADR Max %', minval = 0.75, maxval = 1.5, step = 0.05)
+Failed_Pattern_BarsBack = input.int(20, title = 'Failed Pattern Bars Back', minval = 5, maxval = 50)
+Failed_Pattern_Buffer = input.float(0.05, title = 'Failed Pattern ADR Buffer %', minval = 0.0, maxval = 0.15, step = 0.01)
+
+//Outside Day Parameters
+Outside_Day_ADR_Min = input.float(1.05, title = 'Outside Day ADR Min %', minval = 1.0, maxval = 1.5, step = 0.05)
+Outside_Day_BarsBack = input.int(20, title = 'Outside Day Bars Back', minval = 5, maxval = 50)
+Outside_Day_Buffer = input.float(0.05, title = 'Outside Day ADR Buffer %', minval = 0.0, maxval = 0.15, step = 0.01)
+
+//Absorption Day Parameters
+Absorption_Day_ADR_Max = input.float(0.75, title = 'Absorption Day ADR Max %', minval = 0.5, maxval = 1.0, step = 0.05)
+Absorption_Day_BarsBack = input.int(20, title = 'Absorption Day Bars Back', minval = 5, maxval = 50)
+Absorption_Day_Buffer = input.float(0.05, title = 'Absorption Day ADR Buffer %', minval = 0.0, maxval = 0.15, step = 0.01)
+
+//Stop Run Day Parameters
+Stop_Run_Day_ADR_Min = input.float(2.0, title = 'Stop Run Day ADR Min %', minval = 1.5, maxval = 3.0, step = 0.1)
+Stop_Run_Day_Upper_Close_Percent = input.float(0.85, title = 'Stop Run Day Upper Close %', minval = 0.80, maxval = 0.90, step = 0.01)
+Stop_Run_Day_Lower_Close_Percent = input.float(0.15, title = 'Stop Run Day Lower Close %', minval = 0.10, maxval = 0.20, step = 0.01)
+Stop_Run_Day_BarsBack = input.int(20, title = 'Stop Run Day Bars Back', minval = 5, maxval = 50)
+Stop_Run_Day_Buffer = input.float(0.05, title = 'Stop Run Day ADR Buffer %', minval = 0.0, maxval = 0.15, step = 0.01)
+
+//Rejection Day Parameters
+Rejection_Day_ADR_Min = input.float(1.25, title = 'Rejection Day ADR Min %', minval = 1.0, maxval = 2.0, step = 0.05)
+Rejection_Day_Tail_Body_Ratio = input.float(2.5, title = 'Rejection Day Tail to Body Ratio', minval = 1.5, maxval = 5.0, step = 0.1)
+Rejection_Day_Close_Upper_Percent = input.float(0.35, title = 'Rejection Day Close Upper %', minval = 0.2, maxval = 0.5, step = 0.05)
+Rejection_Day_BarsBack = input.int(20, title = 'Rejection Day Bars Back', minval = 5, maxval = 50)
+Rejection_Day_Buffer = input.float(0.05, title = 'Rejection Day ADR Buffer %', minval = 0.0, maxval = 0.15, step = 0.01)
+
+//Target Display Parameters
+showDailyTargets = input.bool(true, title="Show Daily Targets")
+showWeeklyTargets = input.bool(true, title="Show Weekly Targets")
+showMonthlyTargets = input.bool(true, title="Show Monthly Targets")
+
+// ===== CPR & PIVOT POINTS SECTION =====
+// CPR & Pivot Points Input Parameters
+grp_pivot = "📊 CPR & Pivot Settings"
+show_cpr = input.bool(true, title = "Show CPR (Central Pivot Range)", group = grp_pivot)
+show_cpr_zone = input.bool(true, title = "Show CPR Zone Fill", group = grp_pivot)
+show_camarilla_pivots = input.bool(true, title = "Show Camarilla Pivots", group = grp_pivot)
+pivot_timeframe = input.timeframe("1D", title = "CPR Timeframe", group = grp_pivot)
+show_pivot_labels = input.bool(true, title = "Show Labels", group = grp_pivot)
+pivot_line_width = input.int(2, title = "Line Width", minval = 1, maxval = 4, group = grp_pivot)
+
+// CPR & Pivot Colors
+grp_colors = "🎨 CPR & Pivot Colors"
+color_pivot = input.color(color.new(#FFD700, 0), title = "Central Pivot (P)", group = grp_colors)
+color_tc = input.color(color.new(#FF6B35, 0), title = "Top Central (TC)", group = grp_colors)
+color_bc = input.color(color.new(#F7931E, 0), title = "Bottom Central (BC)", group = grp_colors)
+color_cpr_zone = input.color(color.new(#FFD700, 85), title = "CPR Zone Fill", group = grp_colors)
+color_support = input.color(color.new(#00C851, 0), title = "Support Levels (S1-S4)", group = grp_colors)
+color_resistance = input.color(color.new(#FF4444, 0), title = "Resistance Levels (R1-R4)", group = grp_colors)
+color_camarilla = input.color(color.new(#2196F3, 0), title = "Camarilla Levels", group = grp_colors)
+
+
+//Failed New Low and Failed New High Patterns
+// Calculate Average Daily Range (ADR)
+daily_range = high - low
+average_daily_range = ta.sma(daily_range, Failed_Pattern_BarsBack)
+
+// Previous session values
+prev_high = high[1]
+prev_low = low[1]
+prev_midpoint = (high[1] + low[1]) / 2
+
+// Failed New Low Conditions
+// 1. Range should be 75-100% of ADR (exact thresholds, no buffer)
+range_condition_fnl = daily_range >= average_daily_range * Failed_Pattern_ADR_Min and daily_range <= average_daily_range * Failed_Pattern_ADR_Max
+// 2. Low < previous session's low
+low_break_fnl = low < prev_low
+// 3. Close > previous session's midpoint (ideally)
+close_recovery_fnl = close > prev_midpoint
+
+Failed_New_Low_Condition = range_condition_fnl and low_break_fnl and close_recovery_fnl
+
+// Failed New High Conditions (flip of Failed New Low)
+// 1. Range should be 75-100% of ADR (exact thresholds, no buffer)  
+range_condition_fnh = daily_range >= average_daily_range * Failed_Pattern_ADR_Min and daily_range <= average_daily_range * Failed_Pattern_ADR_Max
+// 2. High > previous session's high
+high_break_fnh = high > prev_high
+// 3. Close < previous session's midpoint (ideally)
+close_decline_fnh = close < prev_midpoint
+
+Failed_New_High_Condition = range_condition_fnh and high_break_fnh and close_decline_fnh
+
+// Variables to track Day 1 Failed Pattern for Day 2+ entry logic
+var float failed_pattern_day1_mid = na
+var bool failed_pattern_day1_fnl = false
+var bool failed_pattern_day1_fnh = false
+
+// Store Day 1 information for Day 2 entry logic
+if Failed_New_Low_Condition
+    failed_pattern_day1_mid := (high + low) / 2  // Store current day's midpoint for FNL entry
+    failed_pattern_day1_fnl := true
+    failed_pattern_day1_fnh := false
+else if Failed_New_High_Condition
+    failed_pattern_day1_mid := (high + low) / 2  // Store current day's midpoint for FNH entry
+    failed_pattern_day1_fnh := true
+    failed_pattern_day1_fnl := false
+else
+    failed_pattern_day1_fnl := false
+    failed_pattern_day1_fnh := false
+
+// Day 2 Entry Conditions per blueprint
+// For Failed New Low (bullish): price must OPEN > MID[1] for bullish entry
+failed_new_low_day2_entry = failed_pattern_day1_fnl[1] and open > failed_pattern_day1_mid[1]
+// For Failed New High (bearish): price must OPEN < MID[1] for bearish entry
+failed_new_high_day2_entry = failed_pattern_day1_fnh[1] and open < failed_pattern_day1_mid[1]
+
+// Failed Pattern plotting - Triangles
+plotshape(series = Failed_New_Low_Condition, title = 'Failed New Low', location = location.belowbar, color = color.new(color.lime, 30), style = shape.triangleup, size = size.tiny)
+
+plotshape(series = Failed_New_High_Condition, title = 'Failed New High', location = location.abovebar, color = color.new(color.maroon, 30), style = shape.triangledown, size = size.tiny)
+
+// Plot Day 2 entry signals
+plotshape(series = failed_new_low_day2_entry, title = 'Failed New Low Day 2 Entry', location = location.belowbar, color = color.new(color.yellow, 30), style = shape.arrowup, size = size.small)
+
+plotshape(series = failed_new_high_day2_entry, title = 'Failed New High Day 2 Entry', location = location.abovebar, color = color.new(color.orange, 30), style = shape.arrowdown, size = size.small)
+
+//Outside Day Patterns
+// Calculate Average Daily Range (ADR) for Outside Day
+outside_day_range = high - low
+outside_day_adr = ta.sma(outside_day_range, Outside_Day_BarsBack)
+
+// Previous session values for Outside Day
+prev_session_high = high[1]
+prev_session_low = low[1]
+prev_session_mid = (high[1] + low[1]) / 2
+
+// Outside Day Long Conditions
+// 1. Range > 105% of ADR (exact threshold, no buffer reduction)
+outside_day_range_condition_long = outside_day_range > outside_day_adr * Outside_Day_ADR_Min
+// 2. Low < previous session's low (forceful rejection)
+outside_day_low_break = low < prev_session_low
+// 3. Close > previous session's high (completes outside day pattern)
+outside_day_close_above = close > prev_session_high
+
+Outside_Day_Long_Condition = outside_day_range_condition_long and outside_day_low_break and outside_day_close_above
+
+// Outside Day Short Conditions (bearish flip)
+// 1. Range > 105% of ADR (exact threshold, no buffer reduction)
+outside_day_range_condition_short = outside_day_range > outside_day_adr * Outside_Day_ADR_Min
+// 2. High > previous session's high (forceful rejection)
+outside_day_high_break = high > prev_session_high
+// 3. Close < previous session's low (completes outside day pattern)
+outside_day_close_below = close < prev_session_low
+
+Outside_Day_Short_Condition = outside_day_range_condition_short and outside_day_high_break and outside_day_close_below
+
+// Outside Day plotting - Circles
+plotshape(series = Outside_Day_Long_Condition, title = 'Outside Day Long', location = location.belowbar, color = color.new(color.green, 30), style = shape.circle, size = size.tiny)
+
+plotshape(series = Outside_Day_Short_Condition, title = 'Outside Day Short', location = location.abovebar, color = color.new(color.red, 30), style = shape.circle, size = size.tiny)
+
+// Plot midpoint levels for Outside Day patterns (optional reference)
+//plot(Outside_Day_Long_Condition ? prev_session_mid : na, 
+//     title='Outside Day Long Mid', 
+//     color=color.new(color.blue, 70), 
+//     linewidth=1, 
+//    style=plot.style_line)
+
+// plot(Outside_Day_Short_Condition ? prev_session_mid : na, 
+//     title='Outside Day Short Mid', 
+//    color=color.new(color.fuchsia, 70), 
+//     linewidth=1, 
+//     style=plot.style_line)
+
+//Absorption Day Patterns - Blueprint Aligned
+// Calculate Average Daily Range (ADR) for Absorption Day
+absorption_day_range = high - low
+absorption_day_adr = ta.sma(absorption_day_range, Absorption_Day_BarsBack)
+
+// Variables to track previous rejection/expansion days for absorption reference
+var float setup_day_mid = na
+var bool setup_day_bullish = false
+var bool setup_day_bearish = false
+
+// Variables to track Day 1 Absorption for Day 2+ entry logic
+var float absorption_day1_mid = na
+var bool absorption_day1_bullish = false
+var bool absorption_day1_bearish = false
+
+// Near midpoint tolerance (RELAXED: increased from 10% to 25% of daily range)
+near_midpoint_tolerance = absorption_day_range * 0.25
+
+// Absorption Day Long Conditions - Blueprint Aligned
+// 1. Range < 75% of ADR (exact threshold, no buffer)
+absorption_day_range_condition_long = absorption_day_range < absorption_day_adr * Absorption_Day_ADR_Max
+// 2. Low is NEAR the previous rejection/expansion day midpoint (within tolerance)
+absorption_day_low_near_setup_mid = not na(setup_day_mid[1]) and math.abs(low - setup_day_mid[1]) <= near_midpoint_tolerance
+// 3. Close > previous rejection/expansion day midpoint (completes absorption pattern)
+absorption_day_close_above_setup_mid = not na(setup_day_mid[1]) and close > setup_day_mid[1]
+// 4. Must follow a setup day within last 3 days (RELAXED timeframe)
+absorption_day_follows_setup_bullish = setup_day_bullish[1] or setup_day_bearish[1] or setup_day_bullish[2] or setup_day_bearish[2] or setup_day_bullish[3] or setup_day_bearish[3]
+// 5. OPTIONAL: Usually close > open (make this optional with OR condition)
+absorption_day_optional_bullish_structure = close > open
+absorption_day_weak_bullish_bias = close >= low + (high - low) * 0.4  // At least in upper 60% of range
+
+Absorption_Day_Long_Condition = absorption_day_range_condition_long and absorption_day_low_near_setup_mid and absorption_day_close_above_setup_mid and absorption_day_follows_setup_bullish and (absorption_day_optional_bullish_structure or absorption_day_weak_bullish_bias)
+
+// Absorption Day Short Conditions - Blueprint Aligned  
+// 1. Range < 75% of ADR (exact threshold, no buffer)
+absorption_day_range_condition_short = absorption_day_range < absorption_day_adr * Absorption_Day_ADR_Max
+// 2. High is NEAR the previous rejection/expansion day midpoint (within tolerance)
+absorption_day_high_near_setup_mid = not na(setup_day_mid[1]) and math.abs(high - setup_day_mid[1]) <= near_midpoint_tolerance
+// 3. Close < previous rejection/expansion day midpoint (completes absorption pattern)
+absorption_day_close_below_setup_mid = not na(setup_day_mid[1]) and close < setup_day_mid[1]
+// 4. Must follow a setup day within last 3 days (RELAXED timeframe)
+absorption_day_follows_setup_bearish = setup_day_bullish[1] or setup_day_bearish[1] or setup_day_bullish[2] or setup_day_bearish[2] or setup_day_bullish[3] or setup_day_bearish[3]
+// 5. OPTIONAL: Usually close < open (make this optional with OR condition)
+absorption_day_optional_bearish_structure = close < open
+absorption_day_weak_bearish_bias = close <= high - (high - low) * 0.4  // At least in lower 60% of range
+
+Absorption_Day_Short_Condition = absorption_day_range_condition_short and absorption_day_high_near_setup_mid and absorption_day_close_below_setup_mid and absorption_day_follows_setup_bearish and (absorption_day_optional_bearish_structure or absorption_day_weak_bearish_bias)
+
+// Store Day 1 information for Day 2 entry logic
+if Absorption_Day_Long_Condition
+    absorption_day1_mid := (high + low) / 2
+    absorption_day1_bullish := true
+    absorption_day1_bearish := false
+else if Absorption_Day_Short_Condition
+    absorption_day1_mid := (high + low) / 2
+    absorption_day1_bearish := true
+    absorption_day1_bullish := false
+else
+    absorption_day1_bullish := false
+    absorption_day1_bearish := false
+
+// Day 2 Entry Conditions - Blueprint Aligned
+// For bullish absorption: price must OPEN > yMID (setup day midpoint) for bullish entry
+absorption_day2_long_entry = absorption_day1_bullish[1] and open > setup_day_mid[1]
+// For bearish absorption: price must OPEN < yMID (setup day midpoint) for bearish entry
+absorption_day2_short_entry = absorption_day1_bearish[1] and open < setup_day_mid[1]
+
+// Absorption Day plotting - Squares
+plotshape(series = Absorption_Day_Long_Condition, title = 'Absorption Day Long', location = location.belowbar, color = color.new(color.aqua, 30), style = shape.square, size = size.tiny)
+
+plotshape(series = Absorption_Day_Short_Condition, title = 'Absorption Day Short', location = location.abovebar, color = color.new(color.blue, 30), style = shape.square, size = size.tiny)
+
+// Plot Day 2 entry signals
+plotshape(series = absorption_day2_long_entry, title = 'Absorption Day 2 Long Entry', location = location.belowbar, color = color.new(color.yellow, 30), style = shape.arrowup, size = size.small)
+
+plotshape(series = absorption_day2_short_entry, title = 'Absorption Day 2 Short Entry', location = location.abovebar, color = color.new(color.orange, 30), style = shape.arrowdown, size = size.small)
+
+//Stop Run Day Patterns - Blueprint Aligned
+// Calculate Average Daily Range (ADR) for Stop Run Day
+stop_run_day_range = high - low
+stop_run_day_adr = ta.sma(stop_run_day_range, Stop_Run_Day_BarsBack)
+
+// Previous session values for Stop Run Day
+prev_stop_run_high = high[1]
+prev_stop_run_low = low[1]
+current_stop_run_mid = (high + low) / 2
+
+// Get recent resistance levels (using highest high in last 10 bars)
+recent_resistance = ta.highest(high[1], 10)
+recent_support = ta.lowest(low[1], 10)
+
+// Day 1 variables for tracking Stop Run Day setup
+var float stop_run_day1_low = na
+var float stop_run_day1_high = na
+var float stop_run_day1_mid = na
+var bool stop_run_day1_bullish = false
+var bool stop_run_day1_bearish = false
+
+// Stop Run Day Long Conditions - Blueprint Aligned
+// 1. RANGE > 200% of ADR (exact threshold, no buffer reduction)
+stop_run_day_range_condition_long = stop_run_day_range > stop_run_day_adr * Stop_Run_Day_ADR_Min
+// 2. CLOSE > previous session's high (mandatory condition)
+stop_run_day_close_above_prev_high = close > prev_stop_run_high
+// 3. CLOSE in upper 10-15% of the day's range (85% allows top 15%)
+stop_run_day_upper_close = close >= (low + (high - low) * Stop_Run_Day_Upper_Close_Percent)
+// 4. MID >= recent resistance (strengthens pattern)
+stop_run_day_mid_above_resistance = current_stop_run_mid >= recent_resistance
+// 5. Optional: Low coincides with rejection (failed range expansion) - NOT mandatory
+stop_run_day_failed_low_optional = low < recent_support
+
+Stop_Run_Day_Long_Condition = stop_run_day_range_condition_long and stop_run_day_close_above_prev_high and stop_run_day_upper_close and stop_run_day_mid_above_resistance
+
+// Stop Run Day Short Conditions - Blueprint Aligned
+// 1. RANGE > 200% of ADR (exact threshold, no buffer reduction)
+stop_run_day_range_condition_short = stop_run_day_range > stop_run_day_adr * Stop_Run_Day_ADR_Min
+// 2. CLOSE < previous session's low (mandatory condition)
+stop_run_day_close_below_prev_low = close < prev_stop_run_low
+// 3. CLOSE in lower 10-15% of the day's range (15% allows bottom 15%)
+stop_run_day_lower_close = close <= (low + (high - low) * Stop_Run_Day_Lower_Close_Percent)
+// 4. MID <= recent support (strengthens pattern)
+stop_run_day_mid_below_support = current_stop_run_mid <= recent_support
+// 5. Optional: High coincides with rejection (failed range expansion) - NOT mandatory
+stop_run_day_failed_high_optional = high > recent_resistance
+
+Stop_Run_Day_Short_Condition = stop_run_day_range_condition_short and stop_run_day_close_below_prev_low and stop_run_day_lower_close and stop_run_day_mid_below_support
+
+// Store Day 1 information for Day 2 entry logic
+if Stop_Run_Day_Long_Condition
+    stop_run_day1_low := low
+    stop_run_day1_high := high
+    stop_run_day1_mid := (high + low) / 2
+    stop_run_day1_bullish := true
+    stop_run_day1_bearish := false
+else if Stop_Run_Day_Short_Condition
+    stop_run_day1_low := low
+    stop_run_day1_high := high
+    stop_run_day1_mid := (high + low) / 2
+    stop_run_day1_bearish := true
+    stop_run_day1_bullish := false
+else
+    stop_run_day1_bullish := false
+    stop_run_day1_bearish := false
+
+// Day 2 Entry Conditions per blueprint
+// For bullish: price must OPEN > MID[1] for entry to be considered at yHI/MID[1]
+stop_run_day2_long_entry = stop_run_day1_bullish[1] and open > stop_run_day1_mid[1]
+// For bearish: price must OPEN < MID[1] for entry to be considered at yLO/MID[1]
+stop_run_day2_short_entry = stop_run_day1_bearish[1] and open < stop_run_day1_mid[1]
+
+// Stop Run Day plotting - Cross/X shapes
+plotshape(series = Stop_Run_Day_Long_Condition, title = 'Stop Run Day Long', location = location.belowbar, color = color.new(color.lime, 30), style = shape.xcross, size = size.tiny)
+
+plotshape(series = Stop_Run_Day_Short_Condition, title = 'Stop Run Day Short', location = location.abovebar, color = color.new(color.maroon, 30), style = shape.xcross, size = size.tiny)
+
+// Plot Day 2 entry signals
+plotshape(series = stop_run_day2_long_entry, title = 'Stop Run Day 2 Long Entry', location = location.belowbar, color = color.new(color.yellow, 30), style = shape.arrowup, size = size.small)
+
+plotshape(series = stop_run_day2_short_entry, title = 'Stop Run Day 2 Short Entry', location = location.abovebar, color = color.new(color.orange, 30), style = shape.arrowdown, size = size.small)
+
+// Rejection Day Patterns
+// Calculate Average Daily Range (ADR) for Rejection Day
+rejection_day_range = high - low
+rejection_day_adr = ta.sma(rejection_day_range, Rejection_Day_BarsBack)
+
+// Calculate body and tail sizes
+rejection_day_body = math.abs(close - open)
+rejection_day_upper_tail = high - math.max(close, open)
+rejection_day_lower_tail = math.min(close, open) - low
+
+// Calculate midpoint for ideal swing entry
+rejection_day_mid = (high + low) / 2
+
+// Calculate close position within the day's range
+rejection_day_close_position = (close - low) / (high - low)
+
+// Variables to track Day 1 rejection for Day 2+ entry logic
+var float rejection_day1_mid = na
+var bool rejection_day1_bullish = false
+var bool rejection_day1_bearish = false
+
+// Rejection Day Long (Bullish) Conditions
+// 1. RANGE > 125% of ADR (greater than average, with buffer for minor differences)
+rejection_day_range_condition_long = rejection_day_range > rejection_day_adr * (Rejection_Day_ADR_Min - Rejection_Day_Buffer)
+// 2. TAIL > 2.5x BODY size (significant rejection of lower prices)
+rejection_day_tail_condition_long = rejection_day_lower_tail > rejection_day_body * Rejection_Day_Tail_Body_Ratio
+// 3. CLOSE in upper 35% of the day's RANGE
+rejection_day_close_condition_long = rejection_day_close_position >= 1 - Rejection_Day_Close_Upper_Percent
+// 4. Overall bullish structure (close above open for stronger signal)
+rejection_day_bullish_structure = close >= open
+
+Rejection_Day_Long_Condition = rejection_day_range_condition_long and rejection_day_tail_condition_long and rejection_day_close_condition_long and rejection_day_bullish_structure
+
+// Rejection Day Short (Bearish) Conditions - Flipped for bearish blueprint
+// 1. RANGE > 125% of ADR (greater than average, with buffer for minor differences)
+rejection_day_range_condition_short = rejection_day_range > rejection_day_adr * (Rejection_Day_ADR_Min - Rejection_Day_Buffer)
+// 2. TAIL > 2.5x BODY size (significant rejection of higher prices)
+rejection_day_tail_condition_short = rejection_day_upper_tail > rejection_day_body * Rejection_Day_Tail_Body_Ratio
+// 3. CLOSE in lower 35% of the day's RANGE
+rejection_day_close_condition_short = rejection_day_close_position <= Rejection_Day_Close_Upper_Percent
+// 4. Overall bearish structure (close below open for stronger signal)
+rejection_day_bearish_structure = close <= open
+
+Rejection_Day_Short_Condition = rejection_day_range_condition_short and rejection_day_tail_condition_short and rejection_day_close_condition_short and rejection_day_bearish_structure
+
+// Store Day 1 information for tracking sequence integrity
+if Rejection_Day_Long_Condition
+    rejection_day1_mid := rejection_day_mid
+    rejection_day1_bullish := true
+    rejection_day1_bearish := false
+else if Rejection_Day_Short_Condition
+    rejection_day1_mid := rejection_day_mid
+    rejection_day1_bearish := true
+    rejection_day1_bullish := false
+else
+    rejection_day1_bullish := false
+    rejection_day1_bearish := false
+
+// Day 2+ Entry Conditions (price must remain above/below midpoint)
+// For bullish rejection: price must OPEN > MID for entry to be considered at MID
+rejection_day2_long_entry = rejection_day1_bullish[1] and open > rejection_day1_mid[1] and low <= rejection_day1_mid[1] and close > rejection_day1_mid[1]
+// For bearish rejection: price must OPEN < MID for entry to be considered at MID  
+rejection_day2_short_entry = rejection_day1_bearish[1] and open < rejection_day1_mid[1] and high >= rejection_day1_mid[1] and close < rejection_day1_mid[1]
+
+// Sequence integrity check (pattern invalidated if price closes below/above midpoint)
+rejection_sequence_intact_long = rejection_day1_bullish and close > rejection_day1_mid
+rejection_sequence_intact_short = rejection_day1_bearish and close < rejection_day1_mid
+
+// Rejection Day plotting - Flag shapes
+plotshape(series = Rejection_Day_Long_Condition, title = 'Rejection Day Long', location = location.belowbar, color = color.new(color.green, 30), style = shape.flag, size = size.tiny)
+
+plotshape(series = Rejection_Day_Short_Condition, title = 'Rejection Day Short', location = location.abovebar, color = color.new(color.red, 30), style = shape.flag, size = size.tiny)
+
+// Track rejection/expansion days that can precede absorption days
+// Look for rejection days (current rejection pattern) or expansion days (outside/stop run patterns) 
+setup_day_rejection_bullish = Rejection_Day_Long_Condition
+setup_day_rejection_bearish = Rejection_Day_Short_Condition
+setup_day_expansion_bullish = Outside_Day_Long_Condition or Stop_Run_Day_Long_Condition
+setup_day_expansion_bearish = Outside_Day_Short_Condition or Stop_Run_Day_Short_Condition
+
+// Store setup day information for absorption reference
+if setup_day_rejection_bullish or setup_day_expansion_bullish
+    setup_day_mid := (high + low) / 2
+    setup_day_bullish := true
+    setup_day_bearish := false
+else if setup_day_rejection_bearish or setup_day_expansion_bearish
+    setup_day_mid := (high + low) / 2
+    setup_day_bearish := true
+    setup_day_bullish := false
+else
+    setup_day_bullish := false
+    setup_day_bearish := false
+
+// ===== CPR & PIVOT CALCULATIONS =====
+// Get Higher Timeframe Data
+htf_high = request.security(syminfo.tickerid, pivot_timeframe, high, lookahead = barmerge.lookahead_off)
+htf_low = request.security(syminfo.tickerid, pivot_timeframe, low, lookahead = barmerge.lookahead_off)
+htf_close = request.security(syminfo.tickerid, pivot_timeframe, close, lookahead = barmerge.lookahead_off)
+
+// Previous period values for CPR calculation
+prev_htf_high = htf_high[1]
+prev_htf_low = htf_low[1]
+prev_htf_close = htf_close[1]
+
+// ===== CPR (Central Pivot Range) Calculations =====
+// Central Pivot (P) - Traditional Pivot Point
+central_pivot = (prev_htf_high + prev_htf_low + prev_htf_close) / 3
+
+// Bottom Central (BC) - Midpoint of High and Low
+bottom_central = (prev_htf_high + prev_htf_low) / 2
+
+// Top Central (TC) - Calculated to complete CPR
+top_central = (central_pivot - bottom_central) + central_pivot
+
+// ===== Traditional Support & Resistance Levels =====
+r1 = 2 * central_pivot - prev_htf_low
+s1 = 2 * central_pivot - prev_htf_high
+r2 = central_pivot + (prev_htf_high - prev_htf_low)
+s2 = central_pivot - (prev_htf_high - prev_htf_low)
+r3 = prev_htf_high + 2 * (central_pivot - prev_htf_low)
+s3 = prev_htf_low - 2 * (prev_htf_high - central_pivot)
+r4 = r3 + (prev_htf_high - prev_htf_low)
+s4 = s3 - (prev_htf_high - prev_htf_low)
+
+// ===== Camarilla Pivot Points =====
+range_hl = prev_htf_high - prev_htf_low
+cam_h3 = prev_htf_close + range_hl * 0.275
+cam_h4 = prev_htf_close + range_hl * 0.55
+cam_h5 = prev_htf_close + range_hl * 1.1
+cam_l3 = prev_htf_close - range_hl * 0.275
+cam_l4 = prev_htf_close - range_hl * 0.55
+cam_l5 = prev_htf_close - range_hl * 1.1
+
+// Check if it's a new period for pivot updates
+is_new_period = timeframe.change(pivot_timeframe)
+
+// ===== PIVOT POINTS PLOTTING =====
+// CPR (Central Pivot Range) - using conditional expressions to avoid local scope plot() issues
+plot(show_cpr ? central_pivot : na, title = "Central Pivot (P)", color = color_pivot, linewidth = pivot_line_width + 1, style = plot.style_line)
+plot(show_cpr ? top_central : na, title = "Top Central (TC)", color = color_tc, linewidth = pivot_line_width, style = plot.style_line)
+plot(show_cpr ? bottom_central : na, title = "Bottom Central (BC)", color = color_bc, linewidth = pivot_line_width, style = plot.style_line)
+
+// CPR Zone Fill
+fill(plot(show_cpr and show_cpr_zone ? top_central : na, display = display.none), 
+     plot(show_cpr and show_cpr_zone ? bottom_central : na, display = display.none), 
+     color = color_cpr_zone, title = "CPR Zone")
+
+// Support & Resistance Levels (R1-R4, S1-S4)
+plot(show_cpr ? r1 : na, title = "R1", color = color.new(color_resistance, 20), linewidth = pivot_line_width, style = plot.style_line)
+plot(show_cpr ? r2 : na, title = "R2", color = color.new(color_resistance, 40), linewidth = pivot_line_width, style = plot.style_line)
+plot(show_cpr ? r3 : na, title = "R3", color = color.new(color_resistance, 60), linewidth = pivot_line_width, style = plot.style_line)
+plot(show_cpr ? r4 : na, title = "R4", color = color.new(color_resistance, 80), linewidth = pivot_line_width, style = plot.style_line)
+plot(show_cpr ? s1 : na, title = "S1", color = color.new(color_support, 20), linewidth = pivot_line_width, style = plot.style_line)
+plot(show_cpr ? s2 : na, title = "S2", color = color.new(color_support, 40), linewidth = pivot_line_width, style = plot.style_line)
+plot(show_cpr ? s3 : na, title = "S3", color = color.new(color_support, 60), linewidth = pivot_line_width, style = plot.style_line)
+plot(show_cpr ? s4 : na, title = "S4", color = color.new(color_support, 80), linewidth = pivot_line_width, style = plot.style_line)
+
+// Camarilla Pivots - using conditional expressions
+plot(show_camarilla_pivots ? cam_h3 : na, title = "Cam H3", color = color.new(color_camarilla, 30), linewidth = pivot_line_width, style = plot.style_stepline)
+plot(show_camarilla_pivots ? cam_h4 : na, title = "Cam H4", color = color.new(color_camarilla, 20), linewidth = pivot_line_width, style = plot.style_stepline)
+plot(show_camarilla_pivots ? cam_h5 : na, title = "Cam H5", color = color.new(color_camarilla, 10), linewidth = pivot_line_width, style = plot.style_stepline)
+plot(show_camarilla_pivots ? cam_l3 : na, title = "Cam L3", color = color.new(color_camarilla, 30), linewidth = pivot_line_width, style = plot.style_stepline)
+plot(show_camarilla_pivots ? cam_l4 : na, title = "Cam L4", color = color.new(color_camarilla, 20), linewidth = pivot_line_width, style = plot.style_stepline)
+plot(show_camarilla_pivots ? cam_l5 : na, title = "Cam L5", color = color.new(color_camarilla, 10), linewidth = pivot_line_width, style = plot.style_stepline)
+
+// ===== PIVOT LABELS =====
+if show_pivot_labels and is_new_period
+    // CPR (Central Pivot Range) Labels
+    if show_cpr
+        label.new(bar_index, central_pivot, "P", style = label.style_none, textcolor = color_pivot, size = size.small)
+        label.new(bar_index, top_central, "TC", style = label.style_none, textcolor = color_tc, size = size.small)
+        label.new(bar_index, bottom_central, "BC", style = label.style_none, textcolor = color_bc, size = size.small)
+        label.new(bar_index, r1, "R1", style = label.style_none, textcolor = color_resistance, size = size.small)
+        label.new(bar_index, r2, "R2", style = label.style_none, textcolor = color_resistance, size = size.small)
+        label.new(bar_index, r3, "R3", style = label.style_none, textcolor = color_resistance, size = size.small)
+        label.new(bar_index, r4, "R4", style = label.style_none, textcolor = color_resistance, size = size.small)
+        label.new(bar_index, s1, "S1", style = label.style_none, textcolor = color_support, size = size.small)
+        label.new(bar_index, s2, "S2", style = label.style_none, textcolor = color_support, size = size.small)
+        label.new(bar_index, s3, "S3", style = label.style_none, textcolor = color_support, size = size.small)
+        label.new(bar_index, s4, "S4", style = label.style_none, textcolor = color_support, size = size.small)
+    
+    // Camarilla Pivot Labels
+    if show_camarilla_pivots
+        label.new(bar_index, cam_h3, "H3", style = label.style_none, textcolor = color_camarilla, size = size.small)
+        label.new(bar_index, cam_h4, "H4", style = label.style_none, textcolor = color_camarilla, size = size.small)
+        label.new(bar_index, cam_h5, "H5", style = label.style_none, textcolor = color_camarilla, size = size.small)
+        label.new(bar_index, cam_l3, "L3", style = label.style_none, textcolor = color_camarilla, size = size.small)
+        label.new(bar_index, cam_l4, "L4", style = label.style_none, textcolor = color_camarilla, size = size.small)
+        label.new(bar_index, cam_l5, "L5", style = label.style_none, textcolor = color_camarilla, size = size.small)
+
+// ===== PIVOT INTERACTION ALERTS =====
+// Price interaction with key pivot levels
+pivot_touch_threshold = syminfo.mintick * 3
+
+// CPR Pivot Interactions
+central_pivot_touch = math.abs(close - central_pivot) <= pivot_touch_threshold
+tc_touch = math.abs(close - top_central) <= pivot_touch_threshold
+bc_touch = math.abs(close - bottom_central) <= pivot_touch_threshold
+r1_touch = math.abs(close - r1) <= pivot_touch_threshold
+s1_touch = math.abs(close - s1) <= pivot_touch_threshold
+
+// Camarilla Pivot Interactions  
+cam_h4_touch = math.abs(close - cam_h4) <= pivot_touch_threshold
+cam_l4_touch = math.abs(close - cam_l4) <= pivot_touch_threshold
+
+// Visual enhancement for pivot touches
+plotshape(central_pivot_touch and show_pivot_labels, title = "Central Pivot Touch", location = location.belowbar, color = color.new(color_pivot, 0), style = shape.diamond, size = size.tiny)
+plotshape(tc_touch and show_pivot_labels, title = "TC Touch", location = location.abovebar, color = color.new(color_tc, 0), style = shape.triangleup, size = size.tiny)
+plotshape(bc_touch and show_pivot_labels, title = "BC Touch", location = location.belowbar, color = color.new(color_bc, 0), style = shape.triangledown, size = size.tiny)
+plotshape(r1_touch and show_pivot_labels, title = "R1 Touch", location = location.abovebar, color = color.new(color_resistance, 0), style = shape.triangleup, size = size.tiny)
+plotshape(s1_touch and show_pivot_labels, title = "S1 Touch", location = location.belowbar, color = color.new(color_support, 0), style = shape.triangledown, size = size.tiny)
+
+// ===== PIVOT LEVELS TABLE =====
+show_pivot_table = input.bool(false, title = "Show Pivot Levels Table", group = grp_pivot)
+table_position = input.string("Top Right", title = "Table Position", options = ["Top Left", "Top Right", "Bottom Left", "Bottom Right"], group = grp_pivot)
+
+if show_pivot_table and barstate.islast
+    // Determine table position
+    pos = switch table_position
+        "Top Left" => position.top_left
+        "Top Right" => position.top_right
+        "Bottom Left" => position.bottom_left
+        "Bottom Right" => position.bottom_right
+        => position.top_right
+
+    // Create pivot levels table (expanded for CPR and R4/S4)
+    var table pivot_table = table.new(pos, 3, 12, bgcolor = color.new(color.white, 90), border_width = 1)
+    
+    if barstate.islast
+        // Header
+        table.cell(pivot_table, 0, 0, "Level", text_color = color.black, text_size = size.small, bgcolor = color.new(color.gray, 70))
+        table.cell(pivot_table, 1, 0, "CPR/Standard", text_color = color.black, text_size = size.small, bgcolor = color.new(color.gray, 70))
+        table.cell(pivot_table, 2, 0, "Camarilla", text_color = color.black, text_size = size.small, bgcolor = color.new(color.gray, 70))
+        
+        // Resistance levels (including R4)
+        table.cell(pivot_table, 0, 1, "R4", text_color = color.red, text_size = size.small)
+        table.cell(pivot_table, 1, 1, str.tostring(r4, "#.##"), text_color = color.black, text_size = size.small)
+        table.cell(pivot_table, 2, 1, "-", text_color = color.gray, text_size = size.small)
+        
+        table.cell(pivot_table, 0, 2, "R3/H5", text_color = color.red, text_size = size.small)
+        table.cell(pivot_table, 1, 2, str.tostring(r3, "#.##"), text_color = color.black, text_size = size.small)
+        table.cell(pivot_table, 2, 2, str.tostring(cam_h5, "#.##"), text_color = color.blue, text_size = size.small)
+        
+        table.cell(pivot_table, 0, 3, "R2/H4", text_color = color.red, text_size = size.small)
+        table.cell(pivot_table, 1, 3, str.tostring(r2, "#.##"), text_color = color.black, text_size = size.small)
+        table.cell(pivot_table, 2, 3, str.tostring(cam_h4, "#.##"), text_color = color.blue, text_size = size.small)
+        
+        table.cell(pivot_table, 0, 4, "R1/H3", text_color = color.red, text_size = size.small)
+        table.cell(pivot_table, 1, 4, str.tostring(r1, "#.##"), text_color = color.black, text_size = size.small)
+        table.cell(pivot_table, 2, 4, str.tostring(cam_h3, "#.##"), text_color = color.blue, text_size = size.small)
+        
+        // CPR (Central Pivot Range) - TC, P, BC
+        table.cell(pivot_table, 0, 5, "TC", text_color = color.orange, text_size = size.small)
+        table.cell(pivot_table, 1, 5, str.tostring(top_central, "#.##"), text_color = color.black, text_size = size.small)
+        table.cell(pivot_table, 2, 5, "-", text_color = color.gray, text_size = size.small)
+        
+        table.cell(pivot_table, 0, 6, "P", text_color = color.yellow, text_size = size.small)
+        table.cell(pivot_table, 1, 6, str.tostring(central_pivot, "#.##"), text_color = color.black, text_size = size.small)
+        table.cell(pivot_table, 2, 6, "-", text_color = color.gray, text_size = size.small)
+        
+        table.cell(pivot_table, 0, 7, "BC", text_color = color.orange, text_size = size.small)
+        table.cell(pivot_table, 1, 7, str.tostring(bottom_central, "#.##"), text_color = color.black, text_size = size.small)
+        table.cell(pivot_table, 2, 7, "-", text_color = color.gray, text_size = size.small)
+        
+        // Support levels (including S4)
+        table.cell(pivot_table, 0, 8, "S1/L3", text_color = color.green, text_size = size.small)
+        table.cell(pivot_table, 1, 8, str.tostring(s1, "#.##"), text_color = color.black, text_size = size.small)
+        table.cell(pivot_table, 2, 8, str.tostring(cam_l3, "#.##"), text_color = color.blue, text_size = size.small)
+        
+        table.cell(pivot_table, 0, 9, "S2/L4", text_color = color.green, text_size = size.small)
+        table.cell(pivot_table, 1, 9, str.tostring(s2, "#.##"), text_color = color.black, text_size = size.small)
+        table.cell(pivot_table, 2, 9, str.tostring(cam_l4, "#.##"), text_color = color.blue, text_size = size.small)
+        
+        table.cell(pivot_table, 0, 10, "S3/L5", text_color = color.green, text_size = size.small)
+        table.cell(pivot_table, 1, 10, str.tostring(s3, "#.##"), text_color = color.black, text_size = size.small)
+        table.cell(pivot_table, 2, 10, str.tostring(cam_l5, "#.##"), text_color = color.blue, text_size = size.small)
+        
+        table.cell(pivot_table, 0, 11, "S4", text_color = color.green, text_size = size.small)
+        table.cell(pivot_table, 1, 11, str.tostring(s4, "#.##"), text_color = color.black, text_size = size.small)
+        table.cell(pivot_table, 2, 11, "-", text_color = color.gray, text_size = size.small)
+
+// ===== TARGET CALCULATIONS SECTION =====
+// Weekly Targets Calculation
+avgWeeklyRange = ta.sma(request.security(syminfo.tickerid, 'W', high - low), 10)
+high_w = request.security(syminfo.tickerid, 'W', high)
+low_w = request.security(syminfo.tickerid, 'W', low)
+
+// Calculate Bull Targets
+primary_bull = low_w + avgWeeklyRange * 0.75
+secondary_bull = low_w + avgWeeklyRange * 1
+extended1_bull = low_w + avgWeeklyRange * 1.25
+extended2_bull = low_w + avgWeeklyRange * 1.5
+extended3_bull = low_w + avgWeeklyRange * 1.75
+extended4_bull = low_w + avgWeeklyRange * 2
+
+// Calculate Bear Targets
+primary_bear = high_w - avgWeeklyRange * 0.75
+secondary_bear = high_w - avgWeeklyRange * 1
+extended1_bear = high_w - avgWeeklyRange * 1.25
+extended2_bear = high_w - avgWeeklyRange * 1.5
+extended3_bear = high_w - avgWeeklyRange * 1.75
+extended4_bear = high_w - avgWeeklyRange * 2
+
+// Store Weekly values on last bar
+var float bull_primary_val = na
+var float bull_secondary_val = na
+var float bull_extended1_val = na
+var float bull_extended2_val = na
+var float bull_extended3_val = na
+var float bull_extended4_val = na
+
+var float bear_primary_val = na
+var float bear_secondary_val = na
+var float bear_extended1_val = na
+var float bear_extended2_val = na
+var float bear_extended3_val = na
+var float bear_extended4_val = na
+
+if barstate.islast
+    bull_primary_val := primary_bull
+    bull_secondary_val := secondary_bull
+    bull_extended1_val := extended1_bull
+    bull_extended2_val := extended2_bull
+    bull_extended3_val := extended3_bull
+    bull_extended4_val := extended4_bull
+
+    bear_primary_val := primary_bear
+    bear_secondary_val := secondary_bear
+    bear_extended1_val := extended1_bear
+    bear_extended2_val := extended2_bear
+    bear_extended3_val := extended3_bear
+    bear_extended4_val := extended4_bear
+
+// Weekly Bull colors - Using a blue-green gradient for a fresh, positive feel
+var color bull_primary_color = color.new(#00796B, 20) // Deep cyan
+var color bull_secondary_color = color.new(#009688, 20) // Darker cyan
+var color bull_extended1_color = color.new(#009688, 30) // Deep teal
+var color bull_extended2_color = color.new(#009688, 40) // Darker teal
+var color bull_extended3_color = color.new(#009688, 50) // Deepest teal
+var color bull_extended4_color = color.new(#009688, 60) // Deepest teal
+
+// Weekly Bear colors - Using a red-purple gradient for a strong, cautionary feel
+var color bear_primary_color = color.new(#C62828, 20) // Deep red
+var color bear_secondary_color = color.new(#B71C1C, 20) // Darker red
+var color bear_extended1_color = color.new(#B71C1C, 30) // Deep pink
+var color bear_extended2_color = color.new(#B71C1C, 40) // Darker pink
+var color bear_extended3_color = color.new(#B71C1C, 50) // Deepest purple
+var color bear_extended4_color = color.new(#B71C1C, 60) // Deepest purple
+
+// Plot Weekly Targets
+if showWeeklyTargets
+    // Plot horizontal lines for Bull Targets
+    line.new(bar_index - 2, bull_primary_val, bar_index, bull_primary_val, color = bull_primary_color, width = 2, extend = extend.right)
+    line.new(bar_index - 2, bull_secondary_val, bar_index, bull_secondary_val, color = bull_secondary_color, width = 2, extend = extend.right)
+    line.new(bar_index - 2, bull_extended1_val, bar_index, bull_extended1_val, color = bull_extended1_color, width = 1, extend = extend.right)
+    line.new(bar_index - 2, bull_extended2_val, bar_index, bull_extended2_val, color = bull_extended2_color, width = 1, extend = extend.right)
+    line.new(bar_index - 2, bull_extended3_val, bar_index, bull_extended3_val, color = bull_extended3_color, width = 1, extend = extend.right)
+    line.new(bar_index - 2, bull_extended4_val, bar_index, bull_extended4_val, color = bull_extended4_color, width = 1, extend = extend.right)
+
+    // Plot horizontal lines for Bear Targets
+    line.new(bar_index - 2, bear_primary_val, bar_index, bear_primary_val, color = bear_primary_color, width = 2, extend = extend.right)
+    line.new(bar_index - 2, bear_secondary_val, bar_index, bear_secondary_val, color = bear_secondary_color, width = 2, extend = extend.right)
+    line.new(bar_index - 2, bear_extended1_val, bar_index, bear_extended1_val, color = bear_extended1_color, width = 1, extend = extend.right)
+    line.new(bar_index - 2, bear_extended2_val, bar_index, bear_extended2_val, color = bear_extended2_color, width = 1, extend = extend.right)
+    line.new(bar_index - 2, bear_extended3_val, bar_index, bear_extended3_val, color = bear_extended3_color, width = 1, extend = extend.right)
+    line.new(bar_index - 2, bear_extended4_val, bar_index, bear_extended4_val, color = bear_extended4_color, width = 1, extend = extend.right)
+
+// Add labels for Weekly Targets at the end of lines
+if showWeeklyTargets and barstate.islast
+    label.new(bar_index + 2, bull_primary_val, 'WR-75%.', color = color.new(color.black, 100), textcolor = bull_primary_color, style = label.style_none, xloc = xloc.bar_index)
+    label.new(bar_index + 2, bull_secondary_val, 'WR-100%.', color = color.new(color.black, 100), textcolor = bull_secondary_color, style = label.style_none, xloc = xloc.bar_index)
+    label.new(bar_index + 2, bull_extended1_val, 'WR-125%.', color = color.new(color.black, 100), textcolor = bull_extended1_color, style = label.style_none, xloc = xloc.bar_index)
+    label.new(bar_index + 2, bull_extended2_val, 'WR-150%.', color = color.new(color.black, 100), textcolor = bull_extended2_color, style = label.style.none, xloc = xloc.bar_index)
+    label.new(bar_index + 2, bull_extended3_val, 'WR-175%.', color = color.new(color.black, 100), textcolor = bull_extended3_color, style = label.style.none, xloc = xloc.bar_index)
+    label.new(bar_index + 2, bull_extended4_val, 'WR-200%.', color = color.new(color.black, 100), textcolor = bull_extended4_color, style = label.style.none, xloc = xloc.bar_index)
+
+    label.new(bar_index + 2, bear_primary_val, 'WS-75%.', color = color.new(color.black, 100), textcolor = bear_primary_color, style = label.style.none, xloc = xloc.bar_index)
+    label.new(bar_index + 2, bear_secondary_val, 'WS-100%.', color = color.new(color.black, 100), textcolor = bear_secondary_color, style = label.style.none, xloc = xloc.bar_index)
+    label.new(bar_index + 2, bear_extended1_val, 'WS-125%.', color = color.new(color.black, 100), textcolor = bear_extended1_color, style = label.style.none, xloc = xloc.bar_index)
+    label.new(bar_index + 2, bear_extended2_val, 'WS-150%.', color = color.new(color.black, 100), textcolor = bear_extended2_color, style = label.style.none, xloc = xloc.bar_index)
+    label.new(bar_index + 2, bear_extended3_val, 'WS-175%.', color = color.new(color.black, 100), textcolor = bear_extended3_color, style = label.style.none, xloc = xloc.bar_index)
+    label.new(bar_index + 2, bear_extended4_val, 'WS-200%.', color = color.new(color.black, 100), textcolor = bear_extended4_color, style = label.style.none, xloc = xloc.bar_index)
+
+// Daily Targets Calculation
+avgDailyRange = ta.sma(request.security(syminfo.tickerid, 'D', high - low), 10)
+high_d = request.security(syminfo.tickerid, 'D', high)
+low_d = request.security(syminfo.tickerid, 'D', low)
+
+// Calculate Daily Bull Targets
+primary_bull_d = low_d + avgDailyRange * 0.75
+secondary_bull_d = low_d + avgDailyRange * 1
+extended1_bull_d = low_d + avgDailyRange * 1.25
+extended2_bull_d = low_d + avgDailyRange * 1.5
+extended3_bull_d = low_d + avgDailyRange * 1.75
+extended4_bull_d = low_d + avgDailyRange * 2
+
+// Calculate Daily Bear Targets
+primary_bear_d = high_d - avgDailyRange * 0.75
+secondary_bear_d = high_d - avgDailyRange * 1
+extended1_bear_d = high_d - avgDailyRange * 1.25
+extended2_bear_d = high_d - avgDailyRange * 1.5
+extended3_bear_d = high_d - avgDailyRange * 1.75
+extended4_bear_d = high_d - avgDailyRange * 2
+
+// Store Daily Values
+var float bull_primary_val_d = na
+var float bull_secondary_val_d = na
+var float bull_extended1_val_d = na
+var float bull_extended2_val_d = na
+var float bull_extended3_val_d = na
+var float bull_extended4_val_d = na
+
+var float bear_primary_val_d = na
+var float bear_secondary_val_d = na
+var float bear_extended1_val_d = na
+var float bear_extended2_val_d = na
+var float bear_extended3_val_d = na
+var float bear_extended4_val_d = na
+
+if barstate.islast
+    bull_primary_val_d := primary_bull_d
+    bull_secondary_val_d := secondary_bull_d
+    bull_extended1_val_d := extended1_bull_d
+    bull_extended2_val_d := extended2_bull_d
+    bull_extended3_val_d := extended3_bull_d
+    bull_extended4_val_d := extended4_bull_d
+
+    bear_primary_val_d := primary_bear_d
+    bear_secondary_val_d := secondary_bear_d
+    bear_extended1_val_d := extended1_bear_d
+    bear_extended2_val_d := extended2_bear_d
+    bear_extended3_val_d := extended3_bear_d
+    bear_extended4_val_d := extended4_bear_d
+
+// Colors for Daily
+var color bull_primary_color_d = color.new(#0288D1, 20) // Light blue
+var color bull_secondary_color_d = color.new(#0288D1, 40)
+var color bull_extended1_color_d = color.new(#0288D1, 50)
+var color bull_extended2_color_d = color.new(#0288D1, 60)
+var color bull_extended3_color_d = color.new(#0288D1, 70)
+var color bull_extended4_color_d = color.new(#0288D1, 80)
+
+var color bear_primary_color_d = color.new(#D32F2F, 20) // Light red
+var color bear_secondary_color_d = color.new(#D32F2F, 40)
+var color bear_extended1_color_d = color.new(#D32F2F, 50)
+var color bear_extended2_color_d = color.new(#D32F2F, 60)
+var color bear_extended3_color_d = color.new(#D32F2F, 70)
+var color bear_extended4_color_d = color.new(#D32F2F, 80)
+
+// Plot Daily Targets
+if showDailyTargets
+    // Bull Levels
+    line.new(bar_index - 2, bull_primary_val_d, bar_index, bull_primary_val_d, color = bull_primary_color_d, width = 2, extend = extend.right)
+    line.new(bar_index - 2, bull_secondary_val_d, bar_index, bull_secondary_val_d, color = bull_secondary_color_d, width = 2, extend = extend.right)
+    line.new(bar_index - 2, bull_extended1_val_d, bar_index, bull_extended1_val_d, color = bull_extended1_color_d, width = 1, extend = extend.right)
+    line.new(bar_index - 2, bull_extended2_val_d, bar_index, bull_extended2_val_d, color = bull_extended2_color_d, width = 1, extend = extend.right)
+    line.new(bar_index - 2, bull_extended3_val_d, bar_index, bull_extended3_val_d, color = bull_extended3_color_d, width = 1, extend = extend.right)
+    line.new(bar_index - 2, bull_extended4_val_d, bar_index, bull_extended4_val_d, color = bull_extended4_color_d, width = 1, extend = extend.right)
+
+    // Bear Levels
+    line.new(bar_index - 2, bear_primary_val_d, bar_index, bear_primary_val_d, color = bear_primary_color_d, width = 2, extend = extend.right)
+    line.new(bar_index - 2, bear_secondary_val_d, bar_index, bear_secondary_val_d, color = bear_secondary_color_d, width = 2, extend = extend.right)
+    line.new(bar_index - 2, bear_extended1_val_d, bar_index, bear_extended1_val_d, color = bear_extended1_color_d, width = 1, extend = extend.right)
+    line.new(bar_index - 2, bear_extended2_val_d, bar_index, bear_extended2_val_d, color = bear_extended2_color_d, width = 1, extend = extend.right)
+    line.new(bar_index - 2, bear_extended3_val_d, bar_index, bear_extended3_val_d, color = bear_extended3_color_d, width = 1, extend = extend.right)
+    line.new(bar_index - 2, bear_extended4_val_d, bar_index, bear_extended4_val_d, color = bear_extended4_color_d, width = 1, extend = extend.right)
+
+// Add Labels for Daily
+if showDailyTargets and barstate.islast
+    // Bulls
+    label.new(bar_index + 2, bull_primary_val_d, 'DR-75%.', color=color.new(color.black, 100), textcolor=bull_primary_color_d, style=label.style_none, xloc=xloc.bar_index)
+    label.new(bar_index + 2, bull_secondary_val_d, 'DR-100%.', color=color.new(color.black, 100), textcolor=bull_secondary_color_d, style=label.style_none, xloc=xloc.bar_index)
+    label.new(bar_index + 2, bull_extended1_val_d, 'DR-125%.', color=color.new(color.black, 100), textcolor=bull_extended1_color_d, style=label.style.none, xloc=xloc.bar_index)
+    label.new(bar_index + 2, bull_extended2_val_d, 'DR-150%.', color=color.new(color.black, 100), textcolor=bull_extended2_color_d, style=label.style.none, xloc=xloc.bar_index)
+    label.new(bar_index + 2, bull_extended3_val_d, 'DR-175%.', color=color.new(color.black, 100), textcolor=bull_extended3_color_d, style=label.style.none, xloc=xloc.bar_index)
+    label.new(bar_index + 2, bull_extended4_val_d, 'DR-200%.', color=color.new(color.black, 100), textcolor=bull_extended4_color_d, style=label.style.none, xloc=xloc.bar_index)
+
+    // Bears
+    label.new(bar_index + 2, bear_primary_val_d, 'DS-75%.', color=color.new(color.black, 100), textcolor=bear_primary_color_d, style=label.style_none, xloc=xloc.bar_index)
+    label.new(bar_index + 2, bear_secondary_val_d, 'DS-100%.', color=color.new(color.black, 100), textcolor=bear_secondary_color_d, style=label.style.none, xloc=xloc.bar_index)
+    label.new(bar_index + 2, bear_extended1_val_d, 'DS-125%.', color=color.new(color.black, 100), textcolor=bear_extended1_color_d, style=label.style.none, xloc=xloc.bar_index)
+    label.new(bar_index + 2, bear_extended2_val_d, 'DS-150%.', color=color.new(color.black, 100), textcolor=bear_extended2_color_d, style=label.style.none, xloc=xloc.bar_index)
+    label.new(bar_index + 2, bear_extended3_val_d, 'DS-175%.', color=color.new(color.black, 100), textcolor=bear_extended3_color_d, style=label.style.none, xloc=xloc.bar_index)
+    label.new(bar_index + 2, bear_extended4_val_d, 'DS-200%.', color=color.new(color.black, 100), textcolor=bear_extended4_color_d, style=label.style.none, xloc=xloc.bar_index)
+
+// Monthly Targets Calculation
+avgMonthlyRange = ta.sma(request.security(syminfo.tickerid, 'M', high - low), 10)
+high_m = request.security(syminfo.tickerid, 'M', high)
+low_m = request.security(syminfo.tickerid, 'M', low)
+
+// Calculate Monthly Bull Targets
+primary_bull_m = low_m + avgMonthlyRange * 0.75
+secondary_bull_m = low_m + avgMonthlyRange
+extended1_bull_m = low_m + avgMonthlyRange * 1.25
+extended2_bull_m = low_m + avgMonthlyRange * 1.5
+extended3_bull_m = low_m + avgMonthlyRange * 1.75
+extended4_bull_m = low_m + avgMonthlyRange * 2
+
+// Calculate Monthly Bear Targets
+primary_bear_m = high_m - avgMonthlyRange * 0.75
+secondary_bear_m = high_m - avgMonthlyRange
+extended1_bear_m = high_m - avgMonthlyRange * 1.25
+extended2_bear_m = high_m - avgMonthlyRange * 1.5
+extended3_bear_m = high_m - avgMonthlyRange * 1.75
+extended4_bear_m = high_m - avgMonthlyRange * 2
+
+// Store Monthly Values
+var float bull_primary_val_m = na
+var float bull_secondary_val_m = na
+var float bull_extended1_val_m = na
+var float bull_extended2_val_m = na
+var float bull_extended3_val_m = na
+var float bull_extended4_val_m = na
+
+var float bear_primary_val_m = na
+var float bear_secondary_val_m = na
+var float bear_extended1_val_m = na
+var float bear_extended2_val_m = na
+var float bear_extended3_val_m = na
+var float bear_extended4_val_m = na
+
+if barstate.islast
+    bull_primary_val_m := primary_bull_m
+    bull_secondary_val_m := secondary_bull_m
+    bull_extended1_val_m := extended1_bull_m
+    bull_extended2_val_m := extended2_bull_m
+    bull_extended3_val_m := extended3_bull_m
+    bull_extended4_val_m := extended4_bull_m
+
+    bear_primary_val_m := primary_bear_m
+    bear_secondary_val_m := secondary_bear_m
+    bear_extended1_val_m := extended1_bear_m
+    bear_extended2_val_m := extended2_bear_m
+    bear_extended3_val_m := extended3_bear_m
+    bear_extended4_val_m := extended4_bear_m
+
+// Monthly Bull and Bear colors
+var color bull_primary_color_m = color.new(#6A1B9A, 20) // Purple
+var color bull_secondary_color_m = color.new(#8E24AA, 20)
+var color bull_extended1_color_m = color.new(#8E24AA, 30)
+var color bull_extended2_color_m = color.new(#8E24AA, 40)
+var color bull_extended3_color_m = color.new(#8E24AA, 50)
+var color bull_extended4_color_m = color.new(#8E24AA, 60)
+
+var color bear_primary_color_m = color.new(#AD1457, 20) // Dark Pink
+var color bear_secondary_color_m = color.new(#D81B60, 20)
+var color bear_extended1_color_m = color.new(#D81B60, 30)
+var color bear_extended2_color_m = color.new(#D81B60, 40)
+var color bear_extended3_color_m = color.new(#D81B60, 50)
+var color bear_extended4_color_m = color.new(#D81B60, 60)
+
+// Plot Monthly Targets
+if showMonthlyTargets
+    // Bull levels
+    line.new(bar_index - 2, bull_primary_val_m, bar_index, bull_primary_val_m, color = bull_primary_color_m, width = 2, extend = extend.right)
+    line.new(bar_index - 2, bull_secondary_val_m, bar_index, bull_secondary_val_m, color = bull_secondary_color_m, width = 2, extend = extend.right)
+    line.new(bar_index - 2, bull_extended1_val_m, bar_index, bull_extended1_val_m, color = bull_extended1_color_m, width = 1, extend = extend.right)
+    line.new(bar_index - 2, bull_extended2_val_m, bar_index, bull_extended2_val_m, color = bull_extended2_color_m, width = 1, extend = extend.right)
+    line.new(bar_index - 2, bull_extended3_val_m, bar_index, bull_extended3_val_m, color = bull_extended3_color_m, width = 1, extend = extend.right)
+    line.new(bar_index - 2, bull_extended4_val_m, bar_index, bull_extended4_val_m, color = bull_extended4_color_m, width = 1, extend = extend.right)
+
+    // Bear levels
+    line.new(bar_index - 2, bear_primary_val_m, bar_index, bear_primary_val_m, color = bear_primary_color_m, width = 2, extend = extend.right)
+    line.new(bar_index - 2, bear_secondary_val_m, bar_index, bear_secondary_val_m, color = bear_secondary_color_m, width = 2, extend = extend.right)
+    line.new(bar_index - 2, bear_extended1_val_m, bar_index, bear_extended1_val_m, color = bear_extended1_color_m, width = 1, extend = extend.right)
+    line.new(bar_index - 2, bear_extended2_val_m, bar_index, bear_extended2_val_m, color = bear_extended2_color_m, width = 1, extend = extend.right)
+    line.new(bar_index - 2, bear_extended3_val_m, bar_index, bear_extended3_val_m, color = bear_extended3_color_m, width = 1, extend = extend.right)
+    line.new(bar_index - 2, bear_extended4_val_m, bar_index, bear_extended4_val_m, color = bear_extended4_color_m, width = 1, extend = extend.right)
+
+// Add Labels for Monthly
+if showMonthlyTargets and barstate.islast
+    // Bulls
+    label.new(bar_index + 2, bull_primary_val_m, 'MR-75%.', color=color.new(color.black, 100), textcolor=bull_primary_color_m, style=label.style_none, xloc=xloc.bar_index)
+    label.new(bar_index + 2, bull_secondary_val_m, 'MR-100%.', color=color.new(color.black, 100), textcolor=bull_secondary_color_m, style=label.style.none, xloc=xloc.bar_index)
+    label.new(bar_index + 2, bull_extended1_val_m, 'MR-125%.', color=color.new(color.black, 100), textcolor=bull_extended1_color_m, style=label.style.none, xloc=xloc.bar_index)
+    label.new(bar_index + 2, bull_extended2_val_m, 'MR-150%.', color=color.new(color.black, 100), textcolor=bull_extended2_color_m, style=label.style.none, xloc=xloc.bar_index)
+    label.new(bar_index + 2, bull_extended3_val_m, 'MR-175%.', color=color.new(color.black, 100), textcolor=bull_extended3_color_m, style=label.style.none, xloc=xloc.bar_index)
+    label.new(bar_index + 2, bull_extended4_val_m, 'MR-200%.', color=color.new(color.black, 100), textcolor=bull_extended4_color_m, style=label.style.none, xloc=xloc.bar_index)
+
+    // Bears
+    label.new(bar_index + 2, bear_primary_val_m, 'MS-75%.', color=color.new(color.black, 100), textcolor=bear_primary_color_m, style=label.style.none, xloc=xloc.bar_index)
+    label.new(bar_index + 2, bear_secondary_val_m, 'MS-100%.', color=color.new(color.black, 100), textcolor=bear_secondary_color_m, style=label.style.none, xloc=xloc.bar_index)
+    label.new(bar_index + 2, bear_extended1_val_m, 'MS-125%.', color=color.new(color.black, 100), textcolor=bear_extended1_color_m, style=label.style.none, xloc=xloc.bar_index)
+    label.new(bar_index + 2, bear_extended2_val_m, 'MS-150%.', color=color.new(color.black, 100), textcolor=bear_extended2_color_m, style=label.style.none, xloc=xloc.bar_index)
+    label.new(bar_index + 2, bear_extended3_val_m, 'MS-175%.', color=color.new(color.black, 100), textcolor=bear_extended3_color_m, style=label.style.none, xloc=xloc.bar_index)
+    label.new(bar_index + 2, bear_extended4_val_m, 'MS-200%.', color=color.new(color.black, 100), textcolor=bear_extended4_color_m, style=label.style.none, xloc=xloc.bar_index)
