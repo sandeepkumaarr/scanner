@@ -3,8 +3,19 @@ import { BlueprintResult, detectBlueprints } from "@/lib/blueprintDetector";
 import {
   getWebSocketClient,
   MarketDataUpdate,
-  BinanceWebSocketClient,
+  TimeframeType,
 } from "@/lib/websocketClient";
+
+// Interface for the WebSocket client methods we use
+interface WebSocketClient {
+  subscribe: (callback: (data: MarketDataUpdate[]) => void) => string;
+  unsubscribe: (id: string) => void;
+  setTimeframe: (timeframe: TimeframeType) => void;
+  getCurrentTimeframe: () => TimeframeType;
+  getCurrentData: () => MarketDataUpdate[];
+  getConnectionStatus: () => boolean;
+  getTopSymbols: (limit?: number) => string[];
+}
 
 interface RealtimeData {
   success: boolean;
@@ -13,6 +24,7 @@ interface RealtimeData {
   totalScanned: number;
   timestamp: string;
   connectionStatus: boolean;
+  currentTimeframe: TimeframeType;
   error?: string;
 }
 
@@ -21,8 +33,10 @@ interface UseRealtimeDataOptions {
   selectedType: string;
   selectedConfidence: string;
   sortBy: string;
+  timeframe?: TimeframeType;
   onData?: (data: RealtimeData) => void;
   onError?: (error: string) => void;
+  onTimeframeChange?: (timeframe: TimeframeType) => void;
 }
 
 export function useRealtimeData({
@@ -30,31 +44,40 @@ export function useRealtimeData({
   selectedType,
   selectedConfidence,
   sortBy,
+  timeframe = "4h",
   onData,
   onError,
+  onTimeframeChange,
 }: UseRealtimeDataOptions) {
   const [data, setData] = useState<RealtimeData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
+  const [currentTimeframe, setCurrentTimeframe] =
+    useState<TimeframeType>(timeframe);
   const subscriptionIdRef = useRef<string | null>(null);
-  const wsClientRef = useRef<BinanceWebSocketClient | null>(null);
+  // Use the WebSocketClient interface for proper typing
+  const wsClientRef = useRef<WebSocketClient | null>(null);
   const processTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Stable references for callbacks to prevent re-renders
   const onDataRef = useRef(onData);
   const onErrorRef = useRef(onError);
-  
+  const onTimeframeChangeRef = useRef(onTimeframeChange);
+
   useEffect(() => {
     onDataRef.current = onData;
     onErrorRef.current = onError;
-  }, [onData, onError]);
+    onTimeframeChangeRef.current = onTimeframeChange;
+  }, [onData, onError, onTimeframeChange]);
 
   // Initialize WebSocket client on mount (client-side only)
   useEffect(() => {
     if (typeof window !== "undefined") {
       try {
-        wsClientRef.current = getWebSocketClient();
+        // Use type assertion to fix TypeScript errors
+        wsClientRef.current =
+          getWebSocketClient() as unknown as WebSocketClient;
       } catch (err) {
         console.error("Failed to initialize WebSocket client:", err);
         setError("Failed to initialize WebSocket connection");
@@ -69,14 +92,14 @@ export function useRealtimeData({
       if (processTimeoutRef.current) {
         clearTimeout(processTimeoutRef.current);
       }
-      
+
       processTimeoutRef.current = setTimeout(async () => {
         try {
           if (!wsClientRef.current) {
             setError("WebSocket client not initialized");
             return;
           }
-          
+
           const topSymbols = wsClientRef.current.getTopSymbols(50);
           const filteredMarketData = marketData.filter((item) =>
             topSymbols.includes(item.symbol)
@@ -135,7 +158,9 @@ export function useRealtimeData({
             totalFound: filteredResults.length,
             totalScanned: filteredMarketData.length,
             timestamp: new Date().toISOString(),
-            connectionStatus: wsClientRef.current?.getConnectionStatus() || false,
+            connectionStatus:
+              wsClientRef.current?.getConnectionStatus() || false,
+            currentTimeframe: currentTimeframe,
           };
 
           setData(newData);
@@ -144,14 +169,16 @@ export function useRealtimeData({
           onDataRef.current?.(newData);
         } catch (err) {
           const errorMessage =
-            err instanceof Error ? err.message : "Failed to process market data";
+            err instanceof Error
+              ? err.message
+              : "Failed to process market data";
           setError(errorMessage);
           setLoading(false);
           onErrorRef.current?.(errorMessage);
         }
       }, 1000); // Throttle to 1 second
     },
-    [selectedType, selectedConfidence, sortBy] // Removed onData and onError from deps
+    [selectedType, selectedConfidence, sortBy, currentTimeframe] // Keep currentTimeframe in deps
   );
 
   const disconnect = useCallback(() => {
@@ -165,6 +192,26 @@ export function useRealtimeData({
     }
     setConnected(false);
   }, []);
+
+  // Add a method to change the timeframe
+  const changeTimeframe = useCallback(
+    (newTimeframe: TimeframeType) => {
+      if (wsClientRef.current && newTimeframe !== currentTimeframe) {
+        setCurrentTimeframe(newTimeframe);
+        wsClientRef.current.setTimeframe(newTimeframe);
+        onTimeframeChangeRef.current?.(newTimeframe);
+
+        // Refresh data after timeframe change
+        if (wsClientRef.current.getConnectionStatus()) {
+          const currentData = wsClientRef.current.getCurrentData();
+          if (currentData.length > 0) {
+            processMarketData(currentData);
+          }
+        }
+      }
+    },
+    [currentTimeframe, processMarketData]
+  );
 
   const connect = useCallback(() => {
     disconnect(); // Close existing subscription
@@ -240,5 +287,7 @@ export function useRealtimeData({
     disconnect,
     reconnect,
     refreshData,
+    changeTimeframe, // Expose changeTimeframe method
+    currentTimeframe, // Expose the current timeframe
   };
 }

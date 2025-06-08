@@ -32,6 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import TimeframeSelector from "@/components/TimeframeSelector";
 import {
   RefreshCw,
   TrendingUp,
@@ -54,11 +55,14 @@ export default function TradingSequenceScanner() {
     error,
     connected,
     reconnect,
+    changeTimeframe,
+    currentTimeframe,
   } = useRealtimeData({
     enabled: true,
     selectedType,
     selectedConfidence,
     sortBy,
+    timeframe: "4h", // Default to 4h timeframe
     onData: (data) => {
       console.log(
         "Received real-time data:",
@@ -68,6 +72,9 @@ export default function TradingSequenceScanner() {
     },
     onError: (error) => {
       console.error("WebSocket error:", error);
+    },
+    onTimeframeChange: (timeframe) => {
+      console.log("Timeframe changed:", timeframe);
     },
   });
 
@@ -183,27 +190,40 @@ export default function TradingSequenceScanner() {
                     Real-time detection of Day Type Blueprints on Binance
                     Futures
                   </CardDescription>
-                  <div className="flex items-center gap-2 mt-2">
-                    <div
-                      className={`w-2 h-2 rounded-full ${
-                        connected ? "bg-green-400" : "bg-red-400"
-                      }`}
-                    ></div>
-                    <span className="text-sm text-blue-100">
-                      {connected ? "Connected" : "Disconnected"}
-                    </span>
+                  <div className="flex items-center gap-4 mt-2">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`w-2 h-2 rounded-full ${
+                          connected ? "bg-green-400" : "bg-red-400"
+                        }`}
+                      ></div>
+                      <span className="text-sm text-blue-100">
+                        {connected ? "Connected" : "Disconnected"}
+                      </span>
+                    </div>
+
+                    {/* Timeframe selector */}
+                    <div className="bg-white/20 rounded-lg p-1 backdrop-blur-sm">
+                      <TimeframeSelector
+                        value={currentTimeframe}
+                        onChange={changeTimeframe}
+                        disabled={!connected || loading}
+                      />
+                    </div>
                   </div>
                 </div>
-                <button
-                  onClick={reconnect}
-                  disabled={loading}
-                  className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors disabled:opacity-50"
-                >
-                  <RefreshCw
-                    className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
-                  />
-                  {connected ? "Refresh" : "Reconnect"}
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={reconnect}
+                    disabled={loading}
+                    className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    <RefreshCw
+                      className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
+                    />
+                    {connected ? "Refresh" : "Reconnect"}
+                  </button>
+                </div>
               </div>
             </CardHeader>
           </Card>
