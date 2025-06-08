@@ -190,26 +190,24 @@ export default function TradingSequenceScanner() {
                     Real-time detection of Day Type Blueprints on Binance
                     Futures
                   </CardDescription>
-                  <div className="flex items-center gap-4 mt-2">
-                    <div className="flex items-center gap-2">
+                  <div className="flex items-center mt-2 space-x-5">
+                    <div className="flex items-center">
                       <div
                         className={`w-2 h-2 rounded-full ${
                           connected ? "bg-green-400" : "bg-red-400"
                         }`}
                       ></div>
-                      <span className="text-sm text-blue-100">
+                      <span className="text-sm text-blue-100 ml-2">
                         {connected ? "Connected" : "Disconnected"}
                       </span>
                     </div>
 
                     {/* Timeframe selector */}
-                    <div className="bg-white/20 rounded-lg p-1 backdrop-blur-sm">
-                      <TimeframeSelector
-                        value={currentTimeframe}
-                        onChange={changeTimeframe}
-                        disabled={!connected || loading}
-                      />
-                    </div>
+                    <TimeframeSelector
+                      value={currentTimeframe}
+                      onChange={changeTimeframe}
+                      disabled={!connected || loading}
+                    />
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
