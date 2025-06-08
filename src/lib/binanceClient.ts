@@ -122,51 +122,57 @@ export class BinanceClient {
     try {
       const exchangeInfo = await this.getExchangeInfo();
       return exchangeInfo.symbols
-        .filter((symbol: { status: string; contractType: string }) => 
-          symbol.status === 'TRADING' && symbol.contractType === 'PERPETUAL')
+        .filter(
+          (symbol: { status: string; contractType: string }) =>
+            symbol.status === "TRADING" && symbol.contractType === "PERPETUAL"
+        )
         .map((symbol: { symbol: string }) => symbol.symbol)
         .slice(0, 50); // Limit to first 50 symbols for demo
     } catch (error) {
-      console.error('Error fetching symbols:', error);
+      console.error("Error fetching symbols:", error);
       return [];
     }
   }
 
   // Get market data for symbols
-  async getMarketData(symbols: string[]): Promise<Array<{
-    symbol: string;
-    price: number;
-    change24h: number;
-    volume: number;
-    high24h: number;
-    low24h: number;
-    open: number;
-    close: number;
-  }>> {
+  async getMarketData(symbols: string[]): Promise<
+    Array<{
+      symbol: string;
+      price: number;
+      change24h: number;
+      volume: number;
+      high24h: number;
+      low24h: number;
+      open: number;
+      close: number;
+    }>
+  > {
     try {
       const tickers = await this.get24hrTicker();
       return tickers
         .filter((ticker: { symbol: string }) => symbols.includes(ticker.symbol))
-        .map((ticker: {
-          symbol: string;
-          lastPrice: string;
-          priceChangePercent: string;
-          volume: string;
-          highPrice: string;
-          lowPrice: string;
-          openPrice: string;
-        }) => ({
-          symbol: ticker.symbol,
-          price: parseFloat(ticker.lastPrice),
-          change24h: parseFloat(ticker.priceChangePercent),
-          volume: parseFloat(ticker.volume),
-          high24h: parseFloat(ticker.highPrice),
-          low24h: parseFloat(ticker.lowPrice),
-          open: parseFloat(ticker.openPrice),
-          close: parseFloat(ticker.lastPrice),
-        }));
+        .map(
+          (ticker: {
+            symbol: string;
+            lastPrice: string;
+            priceChangePercent: string;
+            volume: string;
+            highPrice: string;
+            lowPrice: string;
+            openPrice: string;
+          }) => ({
+            symbol: ticker.symbol,
+            price: parseFloat(ticker.lastPrice),
+            change24h: parseFloat(ticker.priceChangePercent),
+            volume: parseFloat(ticker.volume),
+            high24h: parseFloat(ticker.highPrice),
+            low24h: parseFloat(ticker.lowPrice),
+            open: parseFloat(ticker.openPrice),
+            close: parseFloat(ticker.lastPrice),
+          })
+        );
     } catch (error) {
-      console.error('Error fetching market data:', error);
+      console.error("Error fetching market data:", error);
       return [];
     }
   }

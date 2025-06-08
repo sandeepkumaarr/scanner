@@ -1,5 +1,11 @@
-import TradingSequenceScanner from "@/components/TradingSequenceScanner";
+import TradingSequenceScanner from "@/components/TradingSequenceScanner_backup";
+import WebSocketDebug from "@/components/WebSocketDebug";
 
 export default function Home() {
-  return <TradingSequenceScanner />;
+  return (
+    <div>
+      <WebSocketDebug />
+      <TradingSequenceScanner />
+    </div>
+  );
 }

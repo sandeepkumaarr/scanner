@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState } from "react";
 import {
   Card,
   CardContent,
@@ -8,6 +8,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { useRealtimeData } from "@/hooks/useRealtimeDataWebSocket";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -41,21 +42,34 @@ import {
 } from "lucide-react";
 import { BlueprintResult } from "@/lib/blueprintDetector";
 
-interface ScannerData {
-  success: boolean;
-  data: BlueprintResult[];
-  totalFound: number;
-  totalScanned: number;
-  timestamp: string;
-}
-
 export default function TradingSequenceScanner() {
-  const [scannerData, setScannerData] = useState<ScannerData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<string>("all");
   const [selectedConfidence, setSelectedConfidence] = useState<string>("all");
   const [sortBy, setSortBy] = useState<string>("confidence");
+
+  // Use WebSocket hook for real-time data
+  const {
+    data: scannerData,
+    loading,
+    error,
+    connected,
+    reconnect,
+  } = useRealtimeData({
+    enabled: true,
+    selectedType,
+    selectedConfidence,
+    sortBy,
+    onData: (data) => {
+      console.log(
+        "Received real-time data:",
+        data.totalFound,
+        "patterns found"
+      );
+    },
+    onError: (error) => {
+      console.error("WebSocket error:", error);
+    },
+  });
 
   const blueprintTypes = [
     "all",
@@ -68,36 +82,6 @@ export default function TradingSequenceScanner() {
   ];
 
   const confidenceLevels = ["all", "high", "medium", "low"];
-
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const params = new URLSearchParams({
-        type: selectedType,
-        confidence: selectedConfidence,
-        sortBy: sortBy,
-      });
-
-      const response = await fetch(`/api/scanner?${params}`);
-      const data = await response.json();
-
-      if (data.success) {
-        setScannerData(data);
-      } else {
-        setError(data.error || "Failed to fetch scanner data");
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Network error occurred");
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedType, selectedConfidence, sortBy]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
 
   const getBlueprintIcon = (type: string) => {
     if (type.includes("Rejection"))
@@ -171,7 +155,7 @@ export default function TradingSequenceScanner() {
             <CardContent>
               <p className="text-red-700">{error}</p>
               <button
-                onClick={fetchData}
+                onClick={reconnect}
                 className="mt-4 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
               >
                 Try Again
@@ -199,16 +183,26 @@ export default function TradingSequenceScanner() {
                     Real-time detection of Day Type Blueprints on Binance
                     Futures
                   </CardDescription>
+                  <div className="flex items-center gap-2 mt-2">
+                    <div
+                      className={`w-2 h-2 rounded-full ${
+                        connected ? "bg-green-400" : "bg-red-400"
+                      }`}
+                    ></div>
+                    <span className="text-sm text-blue-100">
+                      {connected ? "Connected" : "Disconnected"}
+                    </span>
+                  </div>
                 </div>
                 <button
-                  onClick={fetchData}
+                  onClick={reconnect}
                   disabled={loading}
                   className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors disabled:opacity-50"
                 >
                   <RefreshCw
                     className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
                   />
-                  Refresh
+                  {connected ? "Refresh" : "Reconnect"}
                 </button>
               </div>
             </CardHeader>

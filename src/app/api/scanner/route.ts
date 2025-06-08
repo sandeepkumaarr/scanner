@@ -12,25 +12,25 @@ export async function GET(request: NextRequest) {
     // Get market data from Binance
     const symbols = await binanceClient.getSymbols();
     const marketData = await binanceClient.getMarketData(symbols);
-    
+
     // Detect blueprints
     const allResults = await detectBlueprints(marketData);
-    
+
     // Filter by type
     let filteredResults = allResults;
     if (type !== "all") {
-      filteredResults = allResults.filter(result => 
+      filteredResults = allResults.filter((result) =>
         result.blueprintType.toLowerCase().includes(type.toLowerCase())
       );
     }
-    
+
     // Filter by confidence
     if (confidence !== "all") {
-      filteredResults = filteredResults.filter(result => 
-        result.confidence.toLowerCase() === confidence.toLowerCase()
+      filteredResults = filteredResults.filter(
+        (result) => result.confidence.toLowerCase() === confidence.toLowerCase()
       );
     }
-    
+
     // Sort results
     filteredResults.sort((a, b) => {
       switch (sortBy) {
@@ -44,9 +44,12 @@ export async function GET(request: NextRequest) {
           return b.volume - a.volume;
         case "confidence":
         default:
-          const confidenceOrder = { "High": 3, "Medium": 2, "Low": 1 };
-          return (confidenceOrder[b.confidence as keyof typeof confidenceOrder] || 0) - 
-                 (confidenceOrder[a.confidence as keyof typeof confidenceOrder] || 0);
+          const confidenceOrder = { High: 3, Medium: 2, Low: 1 };
+          return (
+            (confidenceOrder[b.confidence as keyof typeof confidenceOrder] ||
+              0) -
+            (confidenceOrder[a.confidence as keyof typeof confidenceOrder] || 0)
+          );
       }
     });
 
